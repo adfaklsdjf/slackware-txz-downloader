@@ -29,7 +29,7 @@ urls = []
 total_size = 0
 for package, location, size in packages:
     if not args.packages or package in args.packages:
-        url = "http://slackware.oregonstate.edu/slackware64-current{}/{}".format(location, package)
+        url = "http://slackware.oregonstate.edu/slackware64-current{}/{}".format(location.lstrip('./'), package)
         urls.append((url, size))
         size_kb = int(size.split()[0])
         total_size += size_kb
@@ -68,26 +68,31 @@ for url, size in urls:
         start_time = time.time()
         
         with open("slackware64/{}/{}".format(subdir, package_name), "wb") as file:
-            for data in response.iter_content(block_size):
-                downloaded_size += len(data)
-                file.write(data)
-                
-                # Update real-time download information
-                percent = 100 * downloaded_size / total_size
-                elapsed_time = time.time() - start_time
-                download_speed = downloaded_size / elapsed_time / 1024  # KB/s
-                remaining_time = (total_size - downloaded_size) / 1024 / download_speed if download_speed > 0 else 0  # Seconds
-                
-                sys.stdout.write("\rDownloading {}: {:.2f}% - {:.2f} KB/s - {:.2f} KB / {:.2f} KB - ETA: {:.2f}s".format(
-                    package_name, percent, download_speed, downloaded_size / 1024, total_size / 1024, remaining_time))
-                sys.stdout.flush()
-                
-                # Rate limiting
-                if download_speed > args.rate_limit:
-                    time.sleep(download_speed / args.rate_limit - 1)
-                else:
-                    time.sleep(0.1)  # Add a small delay to allow the download progress to update
-                        
+            if response.status_code == 200:
+                for data in response.iter_content(block_size):
+                    downloaded_size += len(data)
+                    file.write(data)
+                    
+                    # Update real-time download information
+                    percent = 100 * downloaded_size / total_size
+                    elapsed_time = time.time() - start_time
+                    download_speed = downloaded_size / elapsed_time / 1024  # KB/s
+                    remaining_time = (total_size - downloaded_size) / 1024 / download_speed if download_speed > 0 else 0  # Seconds
+                    
+                    sys.stdout.write("\rDownloading {}: {:.2f}% - {:.2f} KB/s - {:.2f} KB / {:.2f} KB - ETA: {:.2f}s".format(
+                        package_name, percent, download_speed, downloaded_size / 1024, total_size / 1024, remaining_time))
+                    sys.stdout.flush()
+                    
+                    # Rate limiting
+                    if download_speed > args.rate_limit:
+                        time.sleep(download_speed / args.rate_limit - 1)
+                    else:
+                        time.sleep(0.1)  # Add a small delay to allow the download progress to update
+            else:
+                print("Error downloading {}: {}".format(package_name, response.status_code))
+                print("Response content:")
+                print(response.content.decode())
+
         sys.stdout.write("\n")
         sys.stdout.flush()
         
