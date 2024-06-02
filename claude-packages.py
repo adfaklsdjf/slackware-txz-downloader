@@ -3,6 +3,7 @@ import requests
 import time
 import re
 import argparse
+import sys
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description="Slackware Package Downloader")
@@ -59,20 +60,34 @@ for url, size in urls:
         # Create the folder structure if it doesn't exist
         os.makedirs("slackware64/{}/".format(subdir), exist_ok=True)
         
-        # Download the package with rate limiting
+        # Download the package with rate limiting and real-time information
         response = requests.get(url, stream=True)
+        total_size = int(response.headers.get("Content-Length", 0))
+        block_size = 1024
+        downloaded_size = 0
+        start_time = time.time()
+        
         with open("slackware64/{}/{}".format(subdir, package_name), "wb") as file:
-            start_time = time.time()
-            downloaded_size = 0
-            for chunk in response.iter_content(chunk_size=1024):
-                if chunk:
-                    file.write(chunk)
-                    downloaded_size += len(chunk)
-                    elapsed_time = time.time() - start_time
-                    if elapsed_time > 0:
-                        download_speed = downloaded_size / elapsed_time / 1024  # KB/s
-                        if download_speed > args.rate_limit:
-                            time.sleep(download_speed / args.rate_limit - 1)
+            for data in response.iter_content(block_size):
+                downloaded_size += len(data)
+                file.write(data)
+                
+                # Update real-time download information
+                percent = 100 * downloaded_size / total_size
+                elapsed_time = time.time() - start_time
+                download_speed = downloaded_size / elapsed_time / 1024  # KB/s
+                remaining_time = (total_size - downloaded_size) / 1024 / download_speed  # Seconds
+                
+                sys.stdout.write("\rDownloading {}: {:.2f}% - {:.2f} KB/s - {:.2f} KB / {:.2f} KB - ETA: {:.2f}s".format(
+                    package_name, percent, download_speed, downloaded_size / 1024, total_size / 1024, remaining_time))
+                sys.stdout.flush()
+                
+                # Rate limiting
+                if download_speed > args.rate_limit:
+                    time.sleep(download_speed / args.rate_limit - 1)
+        
+        sys.stdout.write("\n")
+        sys.stdout.flush()
         
         # Sleep between downloads
         time.sleep(args.sleep)
