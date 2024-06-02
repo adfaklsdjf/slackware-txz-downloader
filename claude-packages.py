@@ -76,7 +76,7 @@ for url, size in urls:
                 percent = 100 * downloaded_size / total_size
                 elapsed_time = time.time() - start_time
                 download_speed = downloaded_size / elapsed_time / 1024  # KB/s
-                remaining_time = (total_size - downloaded_size) / 1024 / download_speed  # Seconds
+                remaining_time = (total_size - downloaded_size) / 1024 / download_speed if download_speed > 0 else 0  # Seconds
                 
                 sys.stdout.write("\rDownloading {}: {:.2f}% - {:.2f} KB/s - {:.2f} KB / {:.2f} KB - ETA: {:.2f}s".format(
                     package_name, percent, download_speed, downloaded_size / 1024, total_size / 1024, remaining_time))
@@ -85,7 +85,9 @@ for url, size in urls:
                 # Rate limiting
                 if download_speed > args.rate_limit:
                     time.sleep(download_speed / args.rate_limit - 1)
-        
+                else:
+                    time.sleep(0.1)  # Add a small delay to allow the download progress to update
+                        
         sys.stdout.write("\n")
         sys.stdout.flush()
         
