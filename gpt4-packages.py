@@ -12,6 +12,15 @@ def create_verbose_function(verbose_flag):
             print(message)
     return verbose
 
+def parse_checksums(checksum_content):
+    checksums = {}
+    for line in checksum_content.splitlines():
+        match = re.match(r"^([a-fA-F0-9]{32})\s+\./(.+)$", line)
+        if match:
+            checksum, filename = match.groups()
+            checksums[filename] = checksum
+    return checksums
+
 # Parse command line arguments
 parser = argparse.ArgumentParser(description="Slackware Package Downloader")
 parser.add_argument("--dry-run", action="store_true", help="Perform a dry run without downloading packages")
@@ -34,6 +43,11 @@ else:
     verbose("Downloading PACKAGES.TXT file...")
     response = requests.get("http://slackware.oregonstate.edu/slackware64-current/slackware64/PACKAGES.TXT")
     packages_txt = response.text
+
+# Download and parse the CHECKSUMS.md5 file
+verbose("Downloading CHECKSUMS.md5 file...")
+response = requests.get("http://slackware.oregonstate.edu/slackware64-current/slackware64/CHECKSUMS.md5")
+checksums = parse_checksums(response.text)
 
 # Extract the package information and generate URLs
 packages = re.findall(r"PACKAGE NAME:\s*(.*?)\nPACKAGE LOCATION:\s*(.*?)\nPACKAGE SIZE \(compressed\):\s*(.*?)\n", packages_txt, re.DOTALL)
@@ -79,21 +93,20 @@ for url, size in urls:
         # Check if the file should be downloaded
         file_exists = os.path.exists(file_path)
         file_size = os.path.getsize(file_path) if file_exists else 0
+        file_checksum_valid = False
 
         if file_exists and file_size > 0:
             if not args.overwrite:
-                print("Skipping download of {} (file already exists)".format(package_name))
-                continue
-
-            print("Overwriting existing file: {}".format(file_path))
-            modification_time = time.ctime(os.path.getmtime(file_path))
-            with open(file_path, "rb") as existing_file:
-                sha1sum = hashlib.sha1(existing_file.read()).hexdigest()
-            print("Size: {} bytes".format(file_size))
-            print("Modification time: {}".format(modification_time))
-            print("SHA1 checksum: {}".format(sha1sum))
-
-
+                with open(file_path, "rb") as existing_file:
+                    existing_file_checksum = hashlib.md5(existing_file.read()).hexdigest()
+                expected_checksum = checksums.get("{}/{}".format(subdir, package_name), "")
+                if existing_file_checksum == expected_checksum:
+                    file_checksum_valid = True
+                    print("File {} exists and checksum is valid. Skipping download.".format(file_path))
+                    continue
+                else:
+                    print("File {} exists but checksum is invalid. Re-downloading...".format(file_path))
+        
         if file_exists and file_size == 0:
             print("Empty file {} exists. Overwriting with downloaded file...".format(file_path))
 
@@ -113,8 +126,6 @@ for url, size in urls:
                 verbose("File opened")
                 for data in response.iter_content(block_size):
                     downloaded_size += len(data)
-                    # verbose("Downloaded {} bytes".format(downloaded_size))
-                    
                     file.write(data)
                     
                     # Update real-time download information
@@ -142,6 +153,16 @@ for url, size in urls:
         verbose("Flush")
         sys.stdout.flush()
         verbose("Download complete")
+
+        # Verify the checksum of the downloaded file
+        with open(file_path, "rb") as downloaded_file:
+            downloaded_file_checksum = hashlib.md5(downloaded_file.read()).hexdigest()
+        expected_checksum = checksums.get("{}/{}".format(subdir, package_name), "")
+        if downloaded_file_checksum == expected_checksum:
+            print("Checksum verification passed for {}".format(file_path))
+        else:
+            print("Warning: Checksum verification failed for {}. Expected: {}, Got: {}".format(
+                file_path, expected_checksum, downloaded_file_checksum))
         
         # Sleep between downloads
         verbose("Sleeping for {} seconds...".format(args.sleep))
