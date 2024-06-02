@@ -74,12 +74,15 @@ for url, size in urls:
 
             file_path = "slackware64/{}/{}".format(subdir, package_name)
 
+
             if os.path.exists(file_path):
-                if args.no_clobber:
+                file_size = os.path.getsize(file_path)
+                if file_size == 0:
+                    print("Empty file {} exists. Overwriting with downloaded file...".format(file_path))
+                elif args.no_clobber:
                     print("Skipping download of {} (file already exists)".format(package_name))
                     continue
                 else:
-                    file_size = os.path.getsize(file_path)
                     modification_time = time.ctime(os.path.getmtime(file_path))
                     with open(file_path, "rb") as existing_file:
                         sha1sum = hashlib.sha1(existing_file.read()).hexdigest()
