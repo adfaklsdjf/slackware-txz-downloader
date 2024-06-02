@@ -10,21 +10,28 @@ parser.add_argument("--dry-run", action="store_true", help="Perform a dry run wi
 parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 parser.add_argument("--sleep", type=int, default=3, help="Sleep time between downloads in seconds (default: 3)")
 parser.add_argument("--rate-limit", type=int, default=500, help="Download rate limit in kilobytes/sec (default: 500)")
+parser.add_argument("--packages-file", help="Path to the local PACKAGES.TXT file")
+parser.add_argument("packages", nargs="*", help="Package names to download (optional)")
 args = parser.parse_args()
 
-# Fetch the PACKAGES.TXT file
-response = requests.get("http://slackware.oregonstate.edu/slackware64-current/slackware64/PACKAGES.TXT")
-packages_txt = response.text
+# Read the PACKAGES.TXT file
+if args.packages_file:
+    with open(args.packages_file, "r") as file:
+        packages_txt = file.read()
+else:
+    response = requests.get("http://slackware.oregonstate.edu/slackware64-current/slackware64/PACKAGES.TXT")
+    packages_txt = response.text
 
 # Extract the package information and generate URLs
 packages = re.findall(r"PACKAGE NAME:\s*(.*?)\nPACKAGE LOCATION:\s*(.*?)\nPACKAGE SIZE \(compressed\):\s*(.*?)\n", packages_txt, re.DOTALL)
 urls = []
 total_size = 0
 for package, location, size in packages:
-    url = "http://slackware.oregonstate.edu/slackware64-current{}/{}".format(location, package)
-    urls.append((url, size))
-    size_kb = int(size.split()[0])
-    total_size += size_kb
+    if not args.packages or package in args.packages:
+        url = "http://slackware.oregonstate.edu/slackware64-current{}/{}".format(location, package)
+        urls.append((url, size))
+        size_kb = int(size.split()[0])
+        total_size += size_kb
 
 # Remove duplicate URLs
 urls = list(set(urls))
