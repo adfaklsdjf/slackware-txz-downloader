@@ -6,6 +6,12 @@ import argparse
 import sys
 import hashlib
 
+def create_verbose_function(verbose_flag):
+    def verbose(message):
+        if verbose_flag:
+            print(message)
+    return verbose
+
 # Parse command line arguments
 parser = argparse.ArgumentParser(description="Slackware Package Downloader")
 parser.add_argument("--dry-run", action="store_true", help="Perform a dry run without downloading packages")
@@ -16,12 +22,16 @@ parser.add_argument("--packages-file", help="Path to the local PACKAGES.TXT file
 parser.add_argument("packages", nargs="*", help="Package names to download (optional)")
 parser.add_argument("--no-clobber", action="store_true", help="Skip downloading if the file already exists")
 args = parser.parse_args()
+verbose = create_verbose_function(args.verbose)
+verbose("Arguments: {}".format(args))
 
 # Read the PACKAGES.TXT file
 if args.packages_file:
+    verbose("Reading PACKAGES.TXT file: {}".format(args.packages_file))
     with open(args.packages_file, "r") as file:
         packages_txt = file.read()
 else:
+    verbose("Downloading PACKAGES.TXT file...")
     response = requests.get("http://slackware.oregonstate.edu/slackware64-current/slackware64/PACKAGES.TXT")
     packages_txt = response.text
 
@@ -39,9 +49,8 @@ for package, location, size in packages:
 # Remove duplicate URLs
 urls = list(set(urls))
 
-if args.verbose:
-    print("Found {} unique package URLs.".format(len(urls)))
-    print("Total download size: {} KB".format(total_size))
+print("Found {} unique package URLs.".format(len(urls)))
+print("Total download size: {} KB".format(total_size))
 
 # Calculate the estimated download time
 download_time = total_size / args.rate_limit + len(urls) * args.sleep
@@ -52,52 +61,59 @@ for url, size in urls:
     package_name = url.split("/")[-1]
     subdir = url.split("/")[-2]
     
-    if args.verbose:
-        print("Package Name: {}".format(package_name))
-        print("URL: {}".format(url))
-        print("Download Destination: slackware64/{}/{}".format(subdir, package_name))
-        print()
+    verbose("Package Name: {}".format(package_name))
+    verbose("URL: {}".format(url))
+    verbose("Download Destination: slackware64/{}/{}".format(subdir, package_name))
+    # newline
+    # verbose("")
     
     if not args.dry_run:
         # Create the folder structure if it doesn't exist
+        verbose("Creating folder structure...")
         os.makedirs("slackware64/{}/".format(subdir), exist_ok=True)
         
         # Download the package with rate limiting and real-time information
+        verbose("Downloading {}...".format(package_name))
         response = requests.get(url, stream=True)
+        verbose("Response received")
         total_size = int(response.headers.get("Content-Length", 0))
-        block_size = 64 * 1024  # 32 KB
+        verbose("Total size: {} bytes".format(total_size))
+        block_size = 1 * 1024  # 32 KB
         downloaded_size = 0
         start_time = time.time()
         
-        with open("slackware64/{}/{}".format(subdir, package_name), "wb") as file:
-
-
-            file_path = "slackware64/{}/{}".format(subdir, package_name)
-
-
-            if os.path.exists(file_path):
-                file_size = os.path.getsize(file_path)
-                if file_size == 0:
-                    print("Empty file {} exists. Overwriting with downloaded file...".format(file_path))
-                elif args.no_clobber:
-                    print("Skipping download of {} (file already exists)".format(package_name))
-                    continue
-                else:
-                    modification_time = time.ctime(os.path.getmtime(file_path))
-                    with open(file_path, "rb") as existing_file:
-                        sha1sum = hashlib.sha1(existing_file.read()).hexdigest()
-                    print("File {} already exists:".format(file_path))
-                    print("Size: {} bytes".format(file_size))
-                    print("Modification time: {}".format(modification_time))
-                    print("SHA1 checksum: {}".format(sha1sum))
-                    print("Overwriting with downloaded file...")
+        file_path = "slackware64/{}/{}".format(subdir, package_name)
+        verbose("File path: {}".format(file_path))
+        if os.path.exists(file_path):
+            verbose("File exists")
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                print("Empty file {} exists. Overwriting with downloaded file...".format(file_path))
+            elif args.no_clobber:
+                print("Skipping download of {} (file already exists)".format(package_name))
+                continue
+            else:
+                verbose("File size: {} bytes".format(file_size))
+                modification_time = time.ctime(os.path.getmtime(file_path))
+                with open(file_path, "rb") as existing_file:
+                    sha1sum = hashlib.sha1(existing_file.read()).hexdigest()
+                print("File {} already exists:".format(file_path))
+                print("Size: {} bytes".format(file_size))
+                print("Modification time: {}".format(modification_time))
+                print("SHA1 checksum: {}".format(sha1sum))
+                print("Overwriting with downloaded file...")
 
             if response.status_code == 200:
+                verbose("Response status code: 200")
                 with open(file_path, "wb") as file:
+                    verbose("File opened")
                     for data in response.iter_content(block_size):
                         downloaded_size += len(data)
-                        file.write(data)
+                        verbose("Downloaded {} bytes".format(downloaded_size))
 
+                        file.write(data)
+                        verbose("Data written to file")
+                        
                         # Update real-time download information
                         percent = 100 * downloaded_size / total_size
                         elapsed_time = time.time() - start_time
@@ -110,6 +126,7 @@ for url, size in urls:
                         
                         # Rate limiting
                         if download_speed > args.rate_limit:
+                            verbose ("\nDownload speed exceeded rate limit. Sleeping for {:.2f}s...".format(download_speed / args.rate_limit - 1)) 
                             time.sleep(download_speed / args.rate_limit - 1)
                         else:
                             time.sleep(0.1)  # Add a small delay to allow the download progress to update
@@ -119,10 +136,15 @@ for url, size in urls:
                 print(response.content.decode())
 
         sys.stdout.write("\n")
+        verbose("Flush")
         sys.stdout.flush()
+        verbose("Download complete")
         
         # Sleep between downloads
+        verbose("Sleeping for {} seconds...".format(args.sleep))
         time.sleep(args.sleep)
+    else:
+        print("Dry run: Skipping download of {}".format(package_name))
 
 if args.dry_run:
     print("Dry run completed. No packages were downloaded.")
